@@ -107,11 +107,6 @@ the guardrails aren't firing.
 `demo/sample-review-workbook.xlsx` is the output of an actual run over these ten questions,
 if you'd rather just look at the shading than reproduce it.
 
-## Analysis
-
-I wrote up what building this taught me about where questionnaire work actually goes:
-*(link to come)*
-
 ## License
 
 Copyright © 2026 Deborah Beckett. GPLv3 — see [LICENSE](LICENSE).
