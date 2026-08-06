@@ -5,25 +5,26 @@ portal.
 
 ## The problem
 
-Most enterprise customers now send their security due-diligence questionnaire through a
-third-party portal — OneTrust, UpGuard, Venminder, Onspring, SAFE ONE, and a long tail of
-others. Those portals are built for the customer's assessment workflow, not the vendor's.
-They let you submit answers. Almost none of them let you export the questions.
+Many enterprise customers now send their security due-diligence questionnaire through a
+third-party portal — OneTrust, UpGuard, Venminder, Onspring, SAFE ONE, and others. Those portals 
+are built for the customer's assessment workflow, not the vendor's.
+They let you submit answers. Many do not support exporting the questions, or your responses.
 
-So the expensive part of a DDQ isn't answering it. Roughly 80% of any questionnaire is ground
+The time-intensive part of a DDQ isn't answering it. Roughly 80% of any questionnaire is ground
 the organization has already covered — MFA, encryption at rest, incident response, backup
 retention — with a validated answer sitting in an answer bank somewhere. The cost is in the
-mechanics around that: someone reads several hundred questions off a screen, retypes them into
-a spreadsheet to work on, answers them, and then retypes the answers back into the portal one
+mechanics around that: someone reads several hundred questions off a screen, matches them to previous 
+questionnaire responses, and then modifies and/or pastes the answers back into the portal one
 field at a time. Then the record of what was submitted lives only in the customer's system, so
-the next renewal starts over.
+the next questionnaire starts over.
 
 Worse, the volume buries the 20% that actually needs judgment — the question with no bank
 match, the one whose scope is ambiguous, the checkbox list where none of the options fit and
 you have to pick the least-bad one. Those are the answers that carry risk, and they get the
 same attention as the ninety questions that didn't need any.
 
-This toolkit automates the mechanical part and puts the review time where it belongs.
+This toolkit automates the mechanical part and puts the review time where it belongs. It can also be
+used to populate spreadsheet-based questionnaires -- it's not limited to the portal workflow.
 
 ## What it does
 
@@ -56,13 +57,13 @@ the operator's.
 
 The judgment rules live in `ddq-propose-answers/references/guardrails.md`, and they're the part
 worth reading even if you never run the toolkit. They cover the failure modes that matter:
-answering the right topic at the wrong scope, over-claiming an attestation you haven't been
-issued, and letting internal handling notes reach a customer.
+answering the right topic at the wrong scope, over-claiming security practices, or letting internal 
+handling notes reach a customer.
 
 ## Prerequisites
 
 Claude Code with browser access. The Linear and Google Drive connectors make a run more
-efficient but aren't required — every step degrades to asking you for what the connector would
+efficient but aren't required — every step degrades to asking you for what a connector would
 have supplied.
 
 You also need your own answer bank. **Every file here is a template.** The `<your-org>` and
