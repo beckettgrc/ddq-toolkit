@@ -1,0 +1,153 @@
+<title>__TITLE__</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: summary strip + filters, then a full-height spreadsheet grid (frozen header row and row numbers). Decisions and edits save to the artifact's db. */
+:root{
+  --bg:#f6f7f9; --sheet:#ffffff; --fg:#1d2430; --muted:#5d6878; --grid:#dfe3ea; --head:#eef1f5; --accent:#2f5d8a; --thumb:#b4bcc8; --thumb-hover:#8d97a6;
+  --yellow:#fff4cc; --gray:#e9ebee; --pink:#fbe1e3;
+  --hi:#e3f4e8; --hi-fg:#1e6b3a; --md:#fbf3d6; --md-fg:#7a5a00; --lo:#fbe4e2; --lo-fg:#9a2b22; --call:#fdebd8; --call-fg:#8a4a10;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12161c; --sheet:#181d25; --fg:#e4e8ee; --muted:#9aa4b2; --grid:#2c3440; --head:#202733; --accent:#7fb0e0; --thumb:#4a5463; --thumb-hover:#66717f;
+  --yellow:#3a3317; --gray:#262c35; --pink:#3d2023;
+  --hi:#183526; --hi-fg:#8fd9a8; --md:#3a3115; --md-fg:#f0d27a; --lo:#3d1d1b; --lo-fg:#f2a49b; --call:#3b2814; --call-fg:#f5bf86; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12161c; --sheet:#181d25; --fg:#e4e8ee; --muted:#9aa4b2; --grid:#2c3440; --head:#202733; --accent:#7fb0e0; --thumb:#4a5463; --thumb-hover:#66717f;
+  --yellow:#3a3317; --gray:#262c35; --pink:#3d2023;
+  --hi:#183526; --hi-fg:#8fd9a8; --md:#3a3115; --md-fg:#f0d27a; --lo:#3d1d1b; --lo-fg:#f2a49b; --call:#3b2814; --call-fg:#f5bf86; color-scheme:dark}
+html,body{height:100%} html{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:13px;display:flex;flex-direction:column;padding-inline:16px;box-sizing:border-box}
+header{padding-block:14px 8px;display:flex;flex-wrap:wrap;gap:6px 24px;align-items:baseline}
+h1{font-size:17px;font-weight:600;margin:0;text-wrap:balance}
+.meta{color:var(--muted);margin:0;display:flex;flex-wrap:wrap;gap:4px 16px}
+details.notes{margin-bottom:8px;max-width:110ch}
+details.notes summary{cursor:pointer;color:var(--muted);font-size:12px}
+details.notes dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;margin:6px 0 0}
+details.notes dt{font-weight:600} details.notes dd{margin:0;min-width:0}
+.bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding-bottom:10px}
+.bar label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-right:2px}
+.chip{font:inherit;font-size:12px;border:1px solid var(--grid);background:var(--sheet);color:var(--fg);border-radius:999px;padding:3px 10px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--sheet)}
+.chip:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+#q{font:inherit;border:1px solid var(--grid);background:var(--sheet);color:var(--fg);border-radius:6px;padding:4px 8px;min-width:0;width:220px;max-width:100%}
+.count{color:var(--muted);font-variant-numeric:tabular-nums;margin-left:auto}
+.banner{border:1px solid var(--grid);background:var(--call);color:var(--call-fg);padding:6px 10px;border-radius:6px;margin-bottom:8px}
+.wrap{flex:1;min-height:0;overflow-x:auto;overflow-y:scroll;scrollbar-gutter:stable;border:1px solid var(--grid);background:var(--sheet);margin-bottom:16px}
+/* Always-visible scrollbars: macOS overlay scrollbars hide until you scroll, so the grid looked unscrollable. */
+.wrap::-webkit-scrollbar{width:12px;height:12px}
+.wrap::-webkit-scrollbar-track{background:var(--head);border-left:1px solid var(--grid)}
+.wrap::-webkit-scrollbar-thumb{background:var(--thumb);border-radius:6px;border:3px solid var(--head)}
+.wrap::-webkit-scrollbar-thumb:hover{background:var(--thumb-hover)}
+.wrap::-webkit-scrollbar-corner{background:var(--head)}
+table{border-collapse:separate;border-spacing:0;table-layout:fixed}
+th,td{border-right:1px solid var(--grid);border-bottom:1px solid var(--grid);padding:5px 7px;vertical-align:top;text-align:left;background:var(--sheet)}
+tr.b-yellow td:not(.rn){background:var(--yellow)} tr.b-gray td:not(.rn){background:var(--gray)} tr.b-pink td:not(.rn){background:var(--pink)}
+thead th{position:sticky;z-index:2;background:var(--head);font-weight:600}
+thead tr.letters th{top:0;height:20px;font-family:var(--mono);font-weight:400;font-size:11px;color:var(--muted);text-align:center;padding:2px}
+thead tr.names th{top:25px}
+th.rn,td.rn{position:sticky;left:0;z-index:1;background:var(--head);width:38px;text-align:right;font-family:var(--mono);font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+thead th.rn{z-index:3}
+td .cell{max-height:6.8em;overflow:hidden;white-space:pre-wrap;line-height:1.35}
+tr.open td .cell{max-height:none}
+tbody tr{cursor:pointer}
+td select,td textarea{font:inherit;font-size:12px;color:var(--fg);background:var(--sheet);border:1px solid var(--grid);border-radius:4px;width:100%;box-sizing:border-box}
+td select{padding:3px 4px}
+td textarea{padding:4px 6px;line-height:1.35;resize:vertical;min-height:7em;display:block}
+td select:focus-visible,td textarea:focus-visible{outline:2px solid var(--accent);outline-offset:0}
+td.dec-Accept{box-shadow:inset 4px 0 0 var(--hi-fg)} td.dec-Reject{box-shadow:inset 4px 0 0 var(--lo-fg)} td.dec-Hold{box-shadow:inset 4px 0 0 var(--md-fg)} td.dec-edits{box-shadow:inset 4px 0 0 var(--accent)}
+.saved{display:block;font-size:10.5px;color:var(--muted);margin-top:3px;min-height:1em}
+.saved.err{color:var(--lo-fg)}
+.pill{display:inline-block;font-size:11px;font-weight:500;padding:1px 7px;border-radius:999px;white-space:nowrap;background:var(--head)}
+.t{font-family:var(--mono);font-size:11px;letter-spacing:.03em}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<header>
+  <h1 id="h"></h1>
+  <p class="meta" id="meta"></p>
+</header>
+<details class="notes" id="notes" hidden><summary>Shading key and notes</summary><dl id="notes-dl"></dl></details>
+<div class="bar" role="toolbar" aria-label="Filters">
+  <label>Show</label>
+  <button class="chip" data-f="undecided" aria-pressed="false" id="f-und">Undecided</button>
+  <button class="chip" data-f="decided" aria-pressed="false" id="f-dec">Decided</button>
+  <button class="chip" data-f="pink" aria-pressed="false" id="f-pink">Pink</button>
+  <button class="chip" data-f="gray" aria-pressed="false" id="f-gray">Gray</button>
+  <button class="chip" data-f="yellow" aria-pressed="false" id="f-yel">Yellow</button>
+  <button class="chip" data-f="attach" aria-pressed="false" id="f-att">Attachments</button>
+  <input id="q" type="search" placeholder="Search questions and answers…" aria-label="Search">
+  <span class="count" id="count"></span>
+</div>
+<div class="banner" id="banner" hidden></div>
+<div class="wrap"><table id="t"><colgroup id="cg"></colgroup><thead></thead><tbody></tbody></table></div>
+<script>
+const P=__DATA__;
+const META=P.meta, R=P.rows;
+const C=[["Section","section",130],["#","id",54],["Hangs Off","parent",64],["Question","question",320],["Short Response Options","options_txt",170],["Proposed Short Response","SHORT",200],["Decision","DEC",150],["Free Text Required?","need",96],["Proposed Free Text Response (Use Only When Required)","FREE",440],["Attachment","attachment",170],["Confidence","confidence",86],["Rationale (Internal Use Only)","rationale",320],["Source (Answer Bank)","source",180],["Your notes","NOTES",220]];
+const OPTS=["","Accept","Accept w/ edits","Reject","Hold"];
+const L=i=>String.fromCharCode(65+i);
+const esc=s=>String(s??'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+const t=document.getElementById('t'),cg=document.getElementById('cg');
+document.getElementById('h').textContent=META.customer+' – proposed DDQ answers';
+document.getElementById('meta').innerHTML=[META.assessment,META.portal&&('Portal: '+META.portal),META.due&&('Due '+META.due),'Drafted '+META.drafted].filter(Boolean).map(x=>'<span>'+esc(x)+'</span>').join('');
+const nd=document.getElementById('notes-dl'); const notes=[["White","Tier 1 bank answer used verbatim, or synthesized above 90 confidence. A glance is enough."],["Yellow","From a secondary bank tab (2./3.). Validate."],["Gray","Synthesized, 80–90 confidence. Verify."],["Pink","Synthesized under 80 confidence, ambiguous, placeholder, or a bank row past its review date. Needs your judgment."]].concat(META.notes||[]);
+nd.innerHTML=notes.map(n=>'<dt>'+esc(n[0])+'</dt><dd>'+esc(n[1])+'</dd>').join(''); document.getElementById('notes').hidden=false;
+cg.innerHTML='<col style="width:38px">'+C.map(c=>'<col style="width:'+c[2]+'px">').join('');
+t.style.width=(38+C.reduce((a,c)=>a+c[2],0))+'px';
+t.tHead.innerHTML='<tr class="letters"><th class="rn"></th>'+C.map((c,i)=>'<th>'+L(i)+'</th>').join('')+'</tr><tr class="names"><th class="rn">1</th>'+C.map(c=>'<th>'+c[0]+'</th>').join('')+'</tr>';
+const on=new Set(), rev={}; let db=null, canSave=false;
+const decClass=d=>d==='Accept w/ edits'?'dec-edits':(d?'dec-'+d:'');
+const ro=()=>canSave?'':' disabled';
+function shortCell(r,x){
+  if(r.kind==='free-text') return '<td><div class="cell">[see proposed comment]</div></td>';
+  const val=x.short!=null&&x.short!==''?x.short:r.short;
+  if(r.kind==='single-select'&&r.options.length){
+    const opts=[''].concat(r.options); if(val&&opts.indexOf(val)<0) opts.push(val);
+    return '<td><select id="sh-'+r.key+'" data-key="'+r.key+'" data-field="short" aria-label="Short response"'+ro()+'>'+opts.map(o=>'<option value="'+esc(o)+'"'+(o===val?' selected':'')+'>'+esc(o||'(no selection)')+'</option>').join('')+'</select></td>';}
+  return '<td><textarea id="sh-'+r.key+'" data-key="'+r.key+'" data-field="short" aria-label="Short response"'+ro()+'>'+esc(val)+'</textarea></td>';}
+function cell(r,c){const k=c[1],x=rev[r.key]||{};
+  if(k==='SHORT') return shortCell(r,x);
+  if(k==='DEC') return '<td class="'+decClass(x.decision)+'" data-dec="'+r.key+'"><select id="d-'+r.key+'" data-key="'+r.key+'" data-field="decision" aria-label="Decision"'+ro()+'>'+OPTS.map(o=>'<option value="'+o+'"'+((x.decision||'')===o?' selected':'')+'>'+(o||'–')+'</option>').join('')+'</select><span class="saved" id="s-'+r.key+'"></span></td>';
+  if(k==='FREE'){ if(!r.use_text&&!x.free_text) return '<td><div class="cell"></div></td>';
+    return '<td><textarea id="fr-'+r.key+'" data-key="'+r.key+'" data-field="free_text" aria-label="Free text response"'+ro()+'>'+esc(x.free_text||r.free_text)+'</textarea></td>';}
+  if(k==='NOTES') return '<td><textarea id="n-'+r.key+'" data-key="'+r.key+'" data-field="notes" aria-label="Your notes" placeholder="Notes for Claude"'+ro()+'>'+esc(x.notes||'')+'</textarea></td>';
+  if(k==='confidence') return '<td>'+(r.confidence!=null&&r.confidence!==''?'<span class="pill">'+esc(r.confidence)+'</span>':'')+'</td>';
+  return '<td><div class="cell">'+esc(r[k])+'</div></td>';}
+function render(){
+  const q=document.getElementById('q').value.toLowerCase();
+  const bands=['pink','gray','yellow'].filter(b=>on.has(b));
+  const f=R.filter(r=>{const d=(rev[r.key]||{}).decision;
+    return (!on.has('undecided')||!d)&&(!on.has('decided')||d)&&(!bands.length||bands.includes(r.band))&&(!on.has('attach')||(r.attachment&&r.attachment!=='- none -'))&&(!q||JSON.stringify(r).toLowerCase().includes(q));});
+  t.tBodies[0].innerHTML=f.map(r=>'<tr class="b-'+r.band+'"><td class="rn">'+(R.indexOf(r)+2)+'</td>'+C.map(c=>cell(r,c)).join('')+'</tr>').join('');
+  count();}
+function count(){const n=R.filter(r=>(rev[r.key]||{}).decision).length;document.getElementById('count').textContent=n+' of '+R.length+' decided';}
+async function save(key,field,value){
+  if(!db) return; const r=R.find(x=>x.key===key);
+  const cur=Object.assign({decision:'',short:'',free_text:'',notes:''},rev[key]||{});
+  if(field==='short'&&value.trim()===String(r.short).trim()) value='';
+  if(field==='free_text'&&value.trim()===String(r.free_text).trim()) value='';
+  if(cur[field]===value) return;
+  cur[field]=value; cur.id=r.id; cur.row=R.indexOf(r)+1; cur.updatedAt=new Date().toISOString();
+  rev[key]=cur; const s=document.getElementById('s-'+key);
+  try{await db.doc('answers/'+key).set(cur); if(s){s.textContent='Saved';s.className='saved';}}
+  catch(e){if(s){s.textContent="Couldn't save – try again";s.className='saved err';}}
+  const td=document.querySelector('td[data-dec="'+key+'"]'); if(td) td.className=decClass(cur.decision);
+  count();}
+t.tBodies[0].addEventListener('change',e=>{const el=e.target;if(el.dataset&&el.dataset.key)save(el.dataset.key,el.dataset.field,el.value);});
+t.tBodies[0].addEventListener('click',e=>{if(e.target.closest('select,textarea'))return;const tr=e.target.closest('tr');if(tr)tr.classList.toggle('open');});
+document.querySelectorAll('.chip').forEach(b=>b.addEventListener('click',()=>{const k=b.dataset.f;on.has(k)?on.delete(k):on.add(k);b.setAttribute('aria-pressed',on.has(k));render();}));
+document.getElementById('q').addEventListener('input',render);
+render();
+(async()=>{
+  const ban=document.getElementById('banner');
+  db=window.claude&&window.claude.use?await window.claude.use('db'):null;
+  if(!db){ban.textContent="Decisions can't be saved in this view. Open the artifact signed in to claude.ai to review.";ban.hidden=false;return;}
+  canSave=true; let first=true;
+  db.collection('answers').onSnapshot(snap=>{
+    snap.docs.forEach(d=>{const v=d.data();if(v)rev[d.id]=Object.assign({},v);});
+    const act=document.activeElement;
+    if(first||!(act&&act.closest&&act.closest('tbody'))){first=false;const w=document.querySelector('.wrap'),y=w.scrollTop;render();w.scrollTop=y;} else count();
+  },()=>{ban.textContent="Lost the connection to saved decisions. Reload the page to continue.";ban.hidden=false;});
+})();
+</script>

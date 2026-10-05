@@ -5,7 +5,9 @@ The JUDGMENT (matching each question to the Answer Bank, choosing tier /
 confidence, writing the answer) is done by Claude and captured in proposal.json.
 This script is the deterministic part: it scrubs internal handling instructions
 out of the customer-facing text, applies the shading convention, and writes a
-Summary + Proposed Answers workbook that a human can review quickly.
+Proposed Answers + Summary workbook that a human can review quickly.
+
+Layout: one row per question, whole-row shading, a Decision pick-list for the reviewer.
 
 Usage:
     python3 build_proposed_xlsx.py proposal.json "Customer_DDQ_PROPOSED_YYYY-MM-DD.xlsx"
@@ -13,61 +15,69 @@ Usage:
 proposal.json schema:
 {
   "meta": {
-    "customer": "...", "assessment": "...", "answer_bank": "...",
-    "drafted": "YYYY-MM-DD", "notes": ["free-form bullets for the Summary sheet"]
+    "customer": "Acme Corp",
+    "assessment": "Vendor Security Assessment 2026",
+    "portal": "ExamplePortal (portal.example.com)",          # or "Spreadsheet", "Email", ...
+    "due": "October 5, 2026",
+    "answer_bank": "<Your Answer Bank> (live Drive copy, modified YYYY-MM-DD)",
+    "drafted": "YYYY-MM-DD",
+    "notes": [["Conditional questions", "..."], ["Bank fixes spotted", "..."]]
+        # each note is [label, text]; a bare string is shown under the label "Note"
   },
   "questions": [
     {
-      "section":    "1. Corporate Information",
-      "id":         "1.1",
+      "section":    "1.0 Business Information",
+      "id":         "1.9",
       "parent":     "",                 # the id this hangs off, "" if top-level
-      "question":   "Please provide ...",
-      "type":       "radio" | "free-text",
-      "options":    [{"label":"Yes","checked":true}, ...],   # [] for free-text
-      "answer":     "Yes",              # the radio pick, or "" for free-text
-      "rationale":  "The customer-facing answer text (verbatim from the bank, or synthesized).",
+      "question":   "Are backups stored inside or outside the US?",
+      "type":       "single-select" | "multi-select" | "free-text",
+                    # legacy "radio" = single-select (multi-select if any option is checked:true)
+      "options":    [{"label":"Inside","checked":true}, ...],   # [] for free-text
+      "answer":     "Yes",              # single-select pick; "" for free-text / multi-select
+      "free_text":  "Customer-facing text (verbatim from the bank, or synthesized).",
+                    # legacy key "rationale" is accepted
+      "free_text_required": "Required" | "Optional" | "N/A",
+                    # Required = the portal compels free text with this answer (a No / N/A
+                    # justification, "Other – specify", an explanation field it won't skip).
+                    # Optional = the portal offers a comment box but doesn't need it.
+                    # N/A = no comment box. Free-text questions are always N/A here, because
+                    # the free text IS the answer. Legacy key "comment_need" is accepted;
+                    # "Recommended" is treated as Required.
       "tier":       "1" | "2-3" | "synth",
-      "confidence": 88,                 # int 0-100, REQUIRED for tier "synth", ignored otherwise
-      "source":     "1. Commercial — \"Does the organization carry insurance...\"",
-      "note":       "short internal action note (why gray, what to verify, gap, etc.)",
-      "attachment": "<your-org> Certificate of Insurance 2026.pdf"   # or ""
+      "confidence": 88,                 # int 0-100; REQUIRED for "synth", optional for "2-3",
+                                        # never shown for tier "1"
+      "source":     "1. General #7",    # bank tab + row; "Synthesized" for synth rows
+      "note":       "short internal note (why this shade, what to verify, the gap)",
+      "attachment": "SOC 2 Type II Report 2026.pdf"   # or ""
     }
   ]
 }
 
-Shading (applied to the Proposed Answer + Rationale cells):
-  tier "1"   -> no fill        (primary verbatim match; ready after a glance)
-  tier "2-3" -> LIGHT YELLOW   (secondary source; verify it fits)
+Column G (Decision) is a pick-list – Accept / Accept w/ edits / Reject / Hold – left blank
+for the reviewer. ddq-portal-fill enters only Accept and Accept w/ edits rows.
+
+Column I (customer-facing free text) is filled only when the question is free text or
+free_text_required is "Required". Otherwise the bank text is kept for reference in the
+internal Rationale column, so the reviewer can add it as a comment if they want.
+
+Shading (applied across the whole row):
+  tier "1"     -> no fill        (primary verbatim match; a glance is enough)
+  tier "2-3"   -> LIGHT YELLOW   (secondary source; validate)
   tier "synth" -> by confidence: >90 no fill, 80-90 LIGHT GRAY, <80 LIGHT PINK
-
-Copyright (C) 2026 Deborah Beckett
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 import json, re, sys
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.worksheet.datavalidation import DataValidation
 
 # --- scrub: internal handling instructions must never reach the customer ---
 # These live in the Answer Bank comment fields on purpose (internal guidance);
-# strip them from the customer-facing rationale, and report what was removed so
+# strip them from the customer-facing text, and report what was removed so
 # nothing is cut silently. Keep legitimate answer language like "assessed on a
 # case-by-case basis" — the tell is a routing/handling instruction aimed at us.
 SCRUB_MARKERS = [
     "please escalate", "escalate to legal", "escalate to finance", "escalate to grc",
-    "escalate to sales", "escalate to support",
-    "handles approval", "approves case-by-case", "approved internally",
+    "escalate to sales engineering", "handles approval", "approves case-by-case", "approved internally",
     "internal approval", "may be superseded", "trust package", "do not publish",
     "do not cite", "hold —", "blocked —", "needs input",
 ]
@@ -94,18 +104,47 @@ def scrub(text):
         removed.append("(inline internal-handling note in parentheses)")
     return " ".join(kept).strip(), removed
 
-def band_fill(q, fills):
+HEADERS = [  # (header, width) — matches the model worksheet
+    ("Section", 15), ("#", 6), ("Hangs Off", 7), ("Question", 41),
+    ("Short Response Options", 15), ("Proposed Short Response", 35), ("Decision", 16),
+    ("Free Text Required?", 13), ("Proposed Free Text Response (Use Only When Required)", 54),
+    ("Attachment", 20), ("Confidence", 13), ("Rationale (Internal Use Only)", 50),
+    ("Source (Answer Bank)", 26),
+]
+FILLS = {
+    "yellow": PatternFill("solid", fgColor="FFF2CC"),
+    "gray":   PatternFill("solid", fgColor="E0E0E0"),
+    "pink":   PatternFill("solid", fgColor="F8D7DA"),
+}
+
+def band(q):
     tier = q.get("tier", "synth")
     if tier == "1":
-        return None
+        return "white"
     if tier == "2-3":
-        return fills["yellow"]
-    c = int(q.get("confidence", 0))
-    if c > 90:
-        return None
-    if c >= 80:
-        return fills["gray"]
-    return fills["pink"]
+        return "yellow"
+    c = int(q.get("confidence") or 0)
+    return "white" if c > 90 else ("gray" if c >= 80 else "pink")
+
+def qtype(q):
+    t = (q.get("type") or "").lower()
+    opts = q.get("options", [])
+    if t in ("free-text", "free text", "freetext", "text") or (not opts and t != "radio"):
+        return "free-text"
+    if t == "multi-select" or (t != "single-select" and sum(1 for o in opts if o.get("checked")) > 0
+                               and not q.get("answer")):
+        return "multi-select"
+    return "single-select"
+
+def ftr(q, kind):
+    if kind == "free-text":
+        return "N/A"
+    v = str(q.get("free_text_required") or q.get("comment_need") or "").strip().lower()
+    if v.startswith("req") or v.startswith("rec"):
+        return "Required"
+    if v.startswith("opt"):
+        return "Optional"
+    return "N/A"
 
 def main(proposal_path, out_path):
     data = json.load(open(proposal_path))
@@ -115,119 +154,118 @@ def main(proposal_path, out_path):
     wb = openpyxl.Workbook()
     thin = Side(style="thin", color="D0D0D0")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
-    hdr_fill = PatternFill("solid", fgColor="1F3A5F")
-    hdr_font = Font(bold=True, color="FFFFFF", size=10)
     wrap = Alignment(wrap_text=True, vertical="top")
-    fills = {
-        "yellow": PatternFill("solid", fgColor="FFF3B0"),
-        "gray":   PatternFill("solid", fgColor="EDEDED"),
-        "pink":   PatternFill("solid", fgColor="FBE0E0"),
-        "attach": PatternFill("solid", fgColor="E8F0FE"),
-    }
 
-    n_t1 = sum(1 for q in qs if q.get("tier") == "1")
-    n_t23 = sum(1 for q in qs if q.get("tier") == "2-3")
-    synth = [q for q in qs if q.get("tier") == "synth"]
-    n_white = n_t1 + sum(1 for q in synth if int(q.get("confidence", 0)) > 90)
-    n_gray = sum(1 for q in synth if 80 <= int(q.get("confidence", 0)) <= 90)
-    n_pink = sum(1 for q in synth if int(q.get("confidence", 0)) < 80)
-    n_att = sum(1 for q in qs if q.get("attachment"))
-
-    # ---- Summary sheet ----
-    ws = wb.active
-    ws.title = "Summary"
-    rows = [
-        (f"{meta.get('customer','')} — Proposed DDQ Answers", ""),
-        ("Assessment", meta.get("assessment", "")),
-        ("Answer Bank", meta.get("answer_bank", "")),
-        ("Drafted", meta.get("drafted", "")),
-        ("", ""),
-        ("Total questions", str(len(qs))),
-        ("Tier-1 primary (verbatim, no shading)", str(n_t1)),
-        ("Tier-2/3 secondary (light yellow)", str(n_t23)),
-        ("Synthesized last-resort", str(len(synth))),
-        ("", ""),
-        ("SHADING KEY",
-         "No shading = Tier-1 primary verbatim match (Answer Bank tabs starting '1'). "
-         "LIGHT YELLOW = Tier-2/3 secondary source (tabs starting '2'/'3'). "
-         "For synthesized answers: no shading = >90% confidence, LIGHT GRAY = 80-90%, LIGHT PINK = <80%. "
-         "Review effort goes to the gray and pink rows first."),
-        ("Confidence tally", f"Ready/verbatim (white): {n_white}   |   Verify (yellow+gray): {n_t23 + n_gray}   |   Judgment (pink): {n_pink}"),
-        ("Attachments proposed", str(n_att)),
-    ]
-    for note in meta.get("notes", []):
-        rows.append(("NOTE", note))
-    for i, (a, b) in enumerate(rows, 1):
-        ca = ws.cell(i, 1, a); cb = ws.cell(i, 2, b)
-        ca.font = Font(bold=True, size=(13 if i == 1 else 10)); ca.alignment = wrap
-        cb.alignment = wrap; cb.font = Font(size=10)
-    ws.column_dimensions["A"].width = 32
-    ws.column_dimensions["B"].width = 112
-
-    # ---- Proposed Answers sheet ----
-    pa = wb.create_sheet("Proposed Answers")
-    heads = ["Section", "Q #", "Hangs off", "Question", "Type", "Response Options",
-             "Proposed Answer", "Proposed Comment / Rationale", "Source", "Confidence / Action", "Proposed Attachment"]
-    for j, h in enumerate(heads, 1):
-        c = pa.cell(1, j, h); c.fill = hdr_fill; c.font = hdr_font; c.alignment = wrap; c.border = border
-    for j, w in enumerate([22, 6, 8, 46, 9, 22, 30, 60, 26, 34, 32], 1):
-        pa.column_dimensions[chr(64 + j)].width = w
+    # ---- Proposed Answers sheet (first, so it opens on the work) ----
+    pa = wb.active
+    pa.title = "Proposed Answers"
+    for j, (h, w) in enumerate(HEADERS, 1):
+        c = pa.cell(1, j, h)
+        c.fill = PatternFill("solid", fgColor="1F3864")
+        c.font = Font(bold=True, color="FFFFFF")
+        c.alignment = Alignment(wrap_text=True, vertical="center")
+        c.border = border
+        pa.column_dimensions[openpyxl.utils.get_column_letter(j)].width = w
     pa.freeze_panes = "A2"
 
+    counts = {"white": 0, "yellow": 0, "gray": 0, "pink": 0}
     scrub_log = []
-    r = 2
-    for q in qs:
+    for r, q in enumerate(qs, 2):
+        kind = qtype(q)
         opts = q.get("options", [])
-        is_radio = bool(opts) or q.get("type") == "radio"
-        pick = q.get("answer", "")
-        # An option is selected if its own `checked` flag is set (multi-select
-        # checkbox) OR it matches the single `answer` pick (radio / Yes-No).
-        def is_sel(o):
-            return bool(o.get("checked")) or (pick and o["label"] == pick)
-        if is_radio:
-            optstr = "\n".join(f"[{'X' if is_sel(o) else ' '}] {o['label']}" for o in opts)
-        else:
-            optstr = "(free-text)"
-        checked_labels = [o["label"] for o in opts if o.get("checked")]
-        rationale, removed = scrub(q.get("rationale", ""))
+        need = ftr(q, kind)
+        text, removed = scrub(q.get("free_text", q.get("rationale", "")) or "")
         if removed:
             scrub_log.append((q["id"], removed))
-        # Proposed Answer: single pick, else the joined multi-select picks, else
-        # a clear "no selection" flag for a radio the reviewer must still settle.
-        if pick:
-            prop = pick
-        elif checked_labels:
-            prop = "; ".join(checked_labels)
-        elif is_radio:
-            prop = "(no selection — see rationale)"
+
+        if kind == "free-text":
+            options_txt = "Free text"
+            short = "[see proposed comment]"
+        elif kind == "multi-select":
+            options_txt = "Multi-select:\n" + "\n".join(f"• {o['label']}" for o in opts)
+            picks = [o["label"] for o in opts if o.get("checked")]
+            short = "\n".join(f"• {p}" for p in picks) or "(no selection – see rationale)"
         else:
-            prop = "(free-text — see rationale)"
+            options_txt = "Single-select:\n" + "\n".join(f"[ ] {o['label']}" for o in opts)
+            short = q.get("answer") or "(no selection – see rationale)"
+
+        use_text = kind == "free-text" or need == "Required"
+        rationale = q.get("note", "") or ""
+        if text and not use_text:
+            rationale = (rationale + "\n\n" if rationale else "") + f"Bank text (if you want a comment): {text}"
+
         tier = q.get("tier", "synth")
-        if tier == "1":
-            tiertxt = "Tier-1 (primary)"
-        elif tier == "2-3":
-            tiertxt = "Tier-2/3 (secondary)"
-        else:
-            tiertxt = f"Synthesized {q.get('confidence','?')}%"
-        if q.get("note"):
-            tiertxt += f" — {q['note']}"
+        conf = q.get("confidence") if tier != "1" else None
+        source = q.get("source") or ("Synthesized" if tier == "synth" else "")
+
         vals = [q.get("section", ""), q["id"], q.get("parent", ""), q["question"],
-                "radio" if is_radio else "free-text", optstr, prop, rationale,
-                q.get("source", ""), tiertxt, q.get("attachment", "")]
+                options_txt, short, None, need, text if use_text else "",
+                q.get("attachment") or "- none -",
+                int(conf) if conf not in (None, "") else None, rationale, source]
+        b = band(q)
+        counts[b] += 1
         for j, v in enumerate(vals, 1):
-            c = pa.cell(r, j, v); c.alignment = wrap; c.border = border; c.font = Font(size=9)
-        fill = band_fill(q, fills)
-        if fill:
-            pa.cell(r, 7).fill = fill; pa.cell(r, 8).fill = fill
-        if q.get("attachment"):
-            pa.cell(r, 11).fill = fills["attach"]
-        r += 1
+            c = pa.cell(r, j, v)
+            c.alignment = wrap
+            c.border = border
+            if b != "white":
+                c.fill = FILLS[b]
+
+    # Decision pick-list on column G. The reviewer picks per row; ddq-portal-fill enters
+    # only "Accept" and "Accept w/ edits" rows.
+    if qs:
+        dv = DataValidation(type="list", formula1='"Accept,Accept w/ edits,Reject,Hold"',
+                            allow_blank=True)
+        dv.error = "Pick Accept, Accept w/ edits, Reject or Hold."
+        pa.add_data_validation(dv)
+        dv.add(f"G2:G{len(qs) + 1}")
+
+    # ---- Summary sheet ----
+    sm = wb.create_sheet("Summary")
+    sections = len({q.get("section", "") for q in qs if q.get("section")})
+    qcount = f"{len(qs)} across {sections} sections" if sections else str(len(qs))
+    rows = [
+        ("Customer", meta.get("customer", "")),
+        ("Assessment", meta.get("assessment", "")),
+        ("Portal", meta.get("portal", "")),
+        ("Due", meta.get("due", "")),
+        ("Questions", qcount),
+        ("Answer Bank", meta.get("answer_bank", "")),
+        ("Prepared", f"{meta.get('drafted', '')} (DRAFT, for internal review; not customer-ready)"),
+        (None, None),
+        ("Shading key", None),
+        ("White", "Tier 1 bank answer used verbatim, or synthesized with >90 confidence. A glance is enough."),
+        ("Yellow", "From a secondary bank tab (2./3.). Validate."),
+        ("Gray", "Synthesized, 80–90 confidence. Verify."),
+        ("Pink", "Synthesized, <80 confidence, ambiguous, or placeholder. Needs your judgment."),
+        (None, None),
+        ("Counts", None),
+        ("White", counts["white"]), ("Yellow", counts["yellow"]),
+        ("Gray", counts["gray"]), ("Pink", counts["pink"]),
+        ("Attachments proposed", sum(1 for q in qs if q.get("attachment"))),
+    ]
+    notes = meta.get("notes", [])
+    if notes:
+        rows += [(None, None), ("Notes", None)]
+        for n in notes:
+            rows.append(tuple(n) if isinstance(n, (list, tuple)) else ("Note", n))
+    for i, (a, b_) in enumerate(rows, 1):
+        ca = sm.cell(i, 1, a); cb = sm.cell(i, 2, b_)
+        ca.alignment = wrap; cb.alignment = wrap
+        if a and b_ is None:
+            ca.font = Font(bold=True)
+        if a in FILLS or a == "White":
+            key = a.lower()
+            if key in FILLS:
+                ca.fill = FILLS[key]
+    sm.column_dimensions["A"].width = 26
+    sm.column_dimensions["B"].width = 110
 
     wb.save(out_path)
     print(f"wrote {out_path}")
-    print(f"questions: {len(qs)} | tier-1: {n_t1} | tier-2/3: {n_t23} | synth: {len(synth)} "
-          f"(white {sum(1 for q in synth if int(q.get('confidence',0))>90)}, gray {n_gray}, pink {n_pink}) "
-          f"| attachments: {n_att}")
+    print(f"questions: {len(qs)} | white {counts['white']} | yellow {counts['yellow']} | "
+          f"gray {counts['gray']} | pink {counts['pink']} | "
+          f"attachments: {sum(1 for q in qs if q.get('attachment'))}")
     if scrub_log:
         print(f"\nSCRUBBED internal-only text from {len(scrub_log)} customer-facing answer(s):")
         for qid, rem in scrub_log:

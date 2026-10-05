@@ -69,8 +69,14 @@ as placeholders and hold the line on them:
   vice-versa) if it doesn't apply.
 - A certification held by an **upstream provider** (e.g. your data-center or cloud provider's
   ISO 27001) is *theirs*, not yours — say so precisely rather than implying it's your own.
-- If you are **not** certified against a standard (PCI DSS, etc.), say so plainly rather than
-  implying coverage.
+- If you are **not** certified against a standard (PCI DSS, etc.), say so plainly – but only
+  when the question names that standard. Never volunteer a negative the customer didn't ask
+  about; it hands them an objection they didn't raise.
+- **Scope specialised authorizations to where they apply.** If an authorization covers a
+  dedicated environment (e.g. a government cloud), say exactly that – "holds a `<X>`
+  authorization for a dedicated `<Y>` environment" – so it can't be read as covering the
+  customer's own environment. Don't explain which controls carry over to the rest of the
+  platform; that invites "which ones don't?".
 - Put a **review-by date** on this section. If assurance status changes (a report issues, a
   window closes), stale guidance here becomes a source of over-claims — flag rather than
   assume.
@@ -112,17 +118,36 @@ aimed at your team.
 ## DDQ voice and framing
 
 - **Don't use "available on request" / "through your account team" as a friction layer.**
-  If the deliverable can be provided, frame it as provided/attached. Reserve
-  "available under NDA" for genuinely NDA-gated docs (audit reports, pen-test summary,
-  policies) — that gating is real and correct.
+- **Don't write attachment sentences in the answer** ("Attached please find X", "the report is
+  attached"). Put the file in the `attachment` field; if the form has an upload option the
+  human attaches it, and if it doesn't and the customer didn't ask, nothing is sent. A
+  document-request question ("Can you provide your SOC 2 report?") is answered "Yes." with the
+  file named in `attachment`.
+- **Don't write "under NDA" / "available on request under NDA".** Customers filling a
+  questionnaire are typically already under NDA, and the questionnaire is the request.
+- **Answer only what was asked.** "What certifications do you hold?" gets the certifications,
+  not the auditor, observation period or trust criteria – keep that detail in its own variant
+  row for when someone asks.
+- **Match length to the question's scope.** A narrow question ("Do you use subcontractors,
+  rather than full-time employees?") gets a one-line answer; only the broader phrasing ("…or
+  subprocessors?") earns the longer one.
+- **One control per answer.** Don't merge separate controls a customer happens to ask about
+  together (e.g. training-content updates vs phishing simulations). A compound question gets
+  the two answers in order.
+- **Pushback lines belong to the pushback question.** Don't pre-empt a follow-up the customer
+  hasn't asked – e.g. "critical issues are typically fixed within hours to days" belongs in the
+  "do you remediate within [shorter X] days?" variant, not in the base timelines answer.
 - **"Where are services delivered / locations"** → answer with the actual origin
   **data centers / regions** you run in, plus your workforce model (e.g. distributed /
   remote-first with no central office, if true). Don't lead with a registered HQ address if
   nobody works from it.
-- **Incident / breach notification timeline** → for international / GDPR-oriented customers,
-  give your specific commitment (e.g. "without undue delay, target within 72 hours, aligned
-  with GDPR breach-notification expectations"). Don't retreat to a bare "without undue delay."
-  Any short *internal* reporting window is internal, not the customer-notification timeline.
+- **Incident / breach notification timeline** → state your standard practice and where the
+  binding timeline lives, e.g. "Affected customers are notified promptly after discovery of a
+  confirmed incident. The timeline for an engagement is set in the executed agreement and data
+  processing agreement, and is typically targeted at within 72 hours in line with GDPR
+  breach-notification expectations." A target isn't a commitment unless the contract says so;
+  on a "within 24 / 48 / 72 hours" pick-list, choose "Other" and paste your wording. Any short
+  *internal* reporting window is internal, not the customer-notification timeline.
 - **Financial-institution-shaped questions** that don't map to your service — AML/CFT policy
   & training, KYC, PEPs, sanctions screening, fraud metrics, three-lines-of-defense — are
   usually a clean, confident **"Not applicable — `<your-org>` is a `<what you are>`, not a
@@ -135,6 +160,18 @@ aimed at your team.
   disclosure is consistent, not contradictory. Answer each to its own scope.
 - **Never name a colleague in a customer-facing answer** in a way that characterizes their
   behavior or judgment. Naming execs when the question asks for management contacts is fine.
+
+## Settled positions that override lagging bank rows
+
+Your bank is the source of truth, but reviews will find rows that are wrong or stale before the
+fix lands in the bank. Keep a short, dated list of those settled positions here; until the bank
+carries them, they win over the bank text. If a bank row contradicts one, make the answer
+**pink** and note the stale row in the Summary's "Bank fixes spotted". Remove each item once the
+bank is fixed. Examples of the kind of thing that belongs here:
+
+- `<Policy fact the bank still gets wrong – e.g. "password rotation is not required; we follow NIST guidance">`
+- `<A date that moved – e.g. "most recent DR test: <date>">`
+- `<An overclaim to stop – e.g. "providers may retain data up to <n> days; only training is prohibited">`
 
 ## Org-specific facts to fill in (from YOUR answer bank, which is source of truth)
 

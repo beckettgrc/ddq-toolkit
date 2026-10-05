@@ -37,12 +37,16 @@ Four skills that hand off to each other:
   routinely hidden in disabled inputs and empty textareas that a screenshot or an HTML scrape
   will miss. Captures every option the portal offered, not just the one selected — that's what
   makes a thin "least-worst-fit" answer visible later.
-- **`ddq-propose-answers`** — matches each question to your answer bank and produces a review
-  workbook whose **shading says where to spend attention**: unshaded for verbatim bank
+- **`ddq-propose-answers`** — matches each question to your answer bank and publishes a live
+  review page whose **shading says where to spend attention**: unshaded for verbatim bank
   answers, yellow for secondary-source material, gray for confident synthesis, pink for the
-  rows that need a human. You review the pink.
-- **`ddq-portal-fill`** — enters your reviewed answers back into the portal and verifies each
-  one by reading the form state back, then stops.
+  rows that need a human. You edit answers in place and set a Decision on each row (Accept,
+  Accept w/ edits, Reject, Hold); it saves as you go. A workbook copy is kept as the record.
+  Simple yes/no questions get a short answer rather than the bank's full description, and bank
+  rows tied to a date (e.g. "in the last 12 months") expire instead of going stale silently.
+- **`ddq-portal-fill`** — reads your decisions from the review page, enters only the accepted
+  answers back into the portal, verifies each one by reading the form state back, and lists
+  what it skipped. Then it stops.
 
 It never submits, and it never sends anything to the customer. Both of those stay yours.
 
@@ -62,7 +66,8 @@ handling notes reach a customer.
 
 ## Prerequisites
 
-Claude Code with browser access. The Linear and Google Drive connectors make a run more
+Claude Code with browser access, and the Artifact tool for the live review page (without it,
+review falls back to the workbook in Google Sheets). The Linear and Google Drive connectors make a run more
 efficient but aren't required — every step degrades to asking you for what a connector would
 have supplied.
 
@@ -104,8 +109,10 @@ If a run comes back entirely unshaded, the bank is being matched too loosely —
 failure mode the demo exists to catch. If questions 4 and 9 come back answered confidently,
 the guardrails aren't firing.
 
-`demo/sample-review-workbook.xlsx` is the output of an actual run over these ten questions,
-if you'd rather just look at the shading than reproduce it.
+`demo/sample-review-workbook.xlsx` and `demo/sample-review-page.html` are the output of a run
+over these ten questions, if you'd rather just look at the shading than reproduce it. (The
+page's Decision and edit controls save only when it's published as a Claude artifact; opened
+locally it's read-only.)
 
 ## License
 

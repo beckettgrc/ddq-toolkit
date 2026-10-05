@@ -2,13 +2,14 @@
 name: ddq-portal-fill
 description: >-
   Fill a vendor security / due-diligence questionnaire that is open in the Claude
-  browser pane using the human-reviewed answers from a proposed-answers workbook,
+  browser pane using the human-reviewed answers from the live review page (or a reviewed proposed-answers workbook),
   then hand back for attachments and submission. Use this as the LAST step of the DDQ
-  chain, after ddq-portal-extract pulled the questions and ddq-propose-answers produced
-  the color-coded workbook the human then reviewed/edited — e.g. "fill the portal",
+  chain, after ddq-portal-extract pulled the questions and ddq-propose-answers published
+  the live review page the human then reviewed/edited — e.g. "fill the portal",
   "enter our answers into the portal", "the responses are approved, fill them in",
-  "complete the questionnaire from the reviewed sheet". Reconciles from the reviewed
-  sheet open in the pane (not the pre-review local file), fills radios / checkboxes /
+  "complete the questionnaire from the reviewed sheet". Reads the reviewer's
+  decisions and edits from the review page (or the reviewed sheet in the pane), never the
+  pre-review local file, fills radios / checkboxes /
   free-text / upload picks, verifies every fill by reading form state back, and closes
   by naming the attachments the human must upload and offering a final saved extract.
   It never submits — the human clicks submit.
@@ -19,19 +20,18 @@ author: Deborah Beckett | deborahbeckett99@gmail.com
 
 ## What this does and why
 
-`ddq-propose-answers` produces a color-coded workbook; the human then reviews it —
-resolving pink rows, correcting answers, picking frames — and that reviewed sheet, not
-the draft Claude generated, is what actually gets submitted. This skill takes those
+`ddq-propose-answers` publishes a color-coded live review page; the human reviews it —
+resolving pink rows, correcting answers, picking a Decision on each row — and those
+reviewed answers, not the draft Claude generated, are what actually get submitted. This skill takes those
 **human-approved** answers and enters them into the live portal, then stops so the human
 can attach files and submit.
 
 Two ideas make this safe rather than a blunt auto-filler:
 
-1. **The reviewed sheet is the source of truth — and it's open in the browser pane.**
-   The person uploaded the proposed-answers workbook into a Drive tab and edited it right
-   there (that's the whole point of putting it in the pane). So read the answers *from the
-   pane*, not from the local `*_PROPOSED_*.xlsx` the propose step wrote — that local file
-   is pre-review and stale the moment the human touches a cell.
+1. **The reviewed answers are the source of truth.** They live in the review page's
+   database (read with `ArtifactData`), or – on the workbook fallback – in the Sheet open in
+   the browser pane. Never fill from the local `*_PROPOSED_*.xlsx` or the raw
+   `proposal.json`: both are pre-review and stale the moment the human edits anything.
 2. **Fill only what the form asks for.** A questionnaire answer is a *selection* plus,
    sometimes, a *comment*. Over-filling comment/free-text fields with rationale is the main
    way a fill step leaks internal or wrong-scoped text to a customer. The comment rule
@@ -43,8 +43,8 @@ Complete questionnaire* is always the human's action, in the portal. Stop before
 ## Where this sits in the chain
 
 1. `ddq-portal-extract` — pull questions + options from the portal.
-2. `ddq-propose-answers` — match to the Answer Bank → color-coded review workbook.
-3. **`ddq-portal-fill` (this skill)** — reconcile from the reviewed sheet in the pane, fill
+2. `ddq-propose-answers` — match to the Answer Bank → live review page (+ workbook record).
+3. **`ddq-portal-fill` (this skill)** — reconcile from the reviewed answers, fill
    the portal, verify, hand back for attachments.
 4. `ddq-portal-extract` again — capture the *completed* portal (answers + attachments) as
    the final saved record. Then the human submits.
@@ -52,54 +52,72 @@ Complete questionnaire* is always the human's action, in the portal. Stop before
 ## Inputs
 
 1. **The portal**, open and signed-in in the browser pane (same tab the extract used).
-2. **The reviewed proposed-answers workbook**, open in a Drive/Sheets tab in the *same*
-   pane. Read the **Proposed Answers** sheet. Its columns (from `build_proposed_xlsx.py`):
-   `Section | Q # | Hangs off | Question | Type | Response Options | Proposed Answer (G) |
-   Proposed Comment / Rationale (H) | Source (I) | Confidence / Action (J) | Proposed
-   Attachment (K)`.
-   - **Column G is the answer** (the radio pick, the checkbox selection text, or a
-     `(free-text — see rationale)` marker meaning "the answer is in H").
-   - **Column H** is the customer-facing text — used *only* for genuine free-text fields
-     (see the comment rule).
-   - **Column K** names the file to attach, when the question is an upload ask.
+2. **The reviewed answers** – from the live review page (normal path) or the reviewed
+   workbook open in the pane (fallback). Either way the fields are the same:
+   - **Decision (G) gates the fill.** Enter **only rows marked "Accept" or "Accept w/
+     edits"**. Skip Reject, Hold and undecided rows – don't fill them, don't "help" by
+     filling the obvious ones – and list the skipped Q#s back to the human before closing,
+     grouped by Reject / Hold / undecided.
+   - **Short response (F)** – the radio pick or the checkbox selection. `[see proposed
+     comment]` (or an empty short response on a free-text question) means the answer is the
+     free text.
+   - **Free text (I)** – the answer to a free-text question, or the comment a select question
+     requires (Free Text Required? = Required).
+   - **Attachment (J)** – the file to attach (`- none -` when there isn't one).
+   - **Rationale (L) and Your notes (N) are internal.** Never paste either into the portal.
+     Do read N – the reviewer may have left an instruction for you there (treat it as their
+     instruction for this DDQ; if it asks for something outside filling, check first).
 
-## Reading the reviewed sheet from the pane
+## Reading the reviewed answers from the review page (normal path)
 
-Google Sheets renders the grid on a **canvas**, so `get_page_text` returns only the
-selected cell and `read_page` won't give you the grid. Read it visually:
+1. Find the page URL: `meta.review_url` in the customer's `*_proposal_*.json` in the project
+   folder (or the link from the propose step earlier in the session).
+2. `ArtifactData` `list` on that URL, collection `answers` (page with `query.cursor` if there
+   are more than 100). Each doc is keyed by the row's `key` and holds `decision`, `short`,
+   `free_text`, `notes`, `id`.
+3. Merge with `proposal.json`: for each question, the **final short response** is the doc's
+   `short` if non-empty, else the proposal's (`answer`, or the checked options); the **final
+   free text** is the doc's `free_text` if non-empty, else the proposal's scrubbed text when
+   the question is free text or Free Text Required = Required. Rebuild the proposal's rows
+   with `build_review_artifact.py` logic (or just run it to a scratch file) so the keys match.
+4. Build the fill plan `{Q#, decision, short, free-text required, free text, attachment}` and
+   drop every row whose decision isn't Accept or Accept w/ edits.
+
+Play the plan back in one line (N to fill, M skipped by reason) before you start.
+
+## Reading the reviewed sheet from the pane (workbook fallback)
+
+Use this only when the review happened in the workbook. Google Sheets renders the grid on a
+**canvas**, so `get_page_text` returns only the selected cell and `read_page` won't give you
+the grid. Read it visually:
 
 1. `tabs_context` to find the Sheets tab; `tabs_select` it.
 2. `screenshot` and scroll through the **Proposed Answers** sheet top to bottom, reading
-   columns G / H / K per row. Widen or zoom if cells are clipped; click a cell to read its
-   full value in the formula bar when a long H is truncated.
-3. Build your fill plan as `{Q#, type, G-answer, H-text, K-attachment}` per question.
+   columns B / F / G / H / I / J per row. Click a cell to read its full value in the formula
+   bar when a long I is truncated.
+3. Build the same fill plan and drop every row whose Decision isn't Accept or Accept w/ edits.
 
-**Do not** re-download the workbook from Drive to read it — the human edited it in the
-pane, and (because an `.xlsx` opened in Sheets autosaves in Office-editing mode) the pane
-*is* current. Round-tripping through the Drive connector is the exact step the pane was set
-up to avoid.
-
-If the sheet isn't open in the pane, ask the human to open it there rather than pulling it.
+Don't re-download the workbook from Drive – the pane is current (an `.xlsx` opened in Sheets
+autosaves in Office-editing mode). If the sheet isn't open in the pane, ask the human to open
+it there.
 
 ## The comment rule (the core guardrail)
 
-**Never proactively fill a comment / free-text field from column H.** Fill H into a field
-only when **one** of these holds:
+**Never proactively fill a comment / free-text field.** Fill column I into a field only
+when **one** of these holds:
 
-- **It's a genuine free-text question and H *is* the answer** (the extract typed it
-  `longAnswer` / `shortAnswer` / free-text; G reads `(free-text — see rationale)`). Then
-  the field's value is H.
-- **Free text beyond the column-G selection is required by the form mechanics** — e.g. a
-  radio/checkbox whose option is "Other (please specify)", or a portal that hard-requires a
-  justification comment before it will accept the row.
+- **It's a genuine free-text question and I *is* the answer** (F reads
+  `[see proposed comment]`). Then the field's value is I.
+- **The portal requires text with the selection** (H = Required) – e.g. "Other (please
+  specify)", or a portal that hard-requires a justification before it will accept the row.
 
-Outside those two cases, a radio/checkbox answer is **the selection alone** — enter the
-pick and move on. H is reviewer/rationale context; it is not a comment to paste. Many
-portals don't even expose a comment box on radio questions (confirm in the DOM); when they
-do, still leave it empty unless one of the two conditions applies.
+Outside those two cases, a radio/checkbox answer is **the selection in F alone** – enter
+the pick and move on. If H says Optional and I is blank, leave the portal's comment box
+empty. Column L (Rationale) is never pasted anywhere. Many portals don't even expose a
+comment box on radio questions (confirm in the DOM).
 
-**Shape H to the field.** When H carries answer-framing that doesn't fit the input — a
-"Yes. " preamble in front of a URL destined for a URL box — enter the value the field wants
+**Shape I to the field.** When I carries answer-framing that doesn't fit the input – a
+"Yes. " preamble in front of a URL destined for a URL box – enter the value the field wants
 (the URL), not the conversational wrapper. Note any such trimming in your report.
 
 **Don't fill an unresolved row.** If a reviewed row is still a "pick a reading" note rather
@@ -156,13 +174,11 @@ When the fillable answers are in, don't declare victory — walk the human throu
 left, in two beats:
 
 **1. Attachments (right after filling).** Count the questions that ask for an upload and
-name the recommended file for each from column K. Say plainly that you can't upload and
-that the file is named in the sheet's final column. Template:
+name the recommended file for each from the Attachment column (J). Say plainly that you can't upload and
+that the file is named in the sheet's Attachment column. Template:
 
 > There are **N questions requiring you to upload an attachment** (Qx, Qy). I can't upload
-> these for you, but I've recommended the file to attach in the final column (**Proposed
-> Attachment**) of the Proposed Answers sheet — Qx: `<file>` (NDA-gated), Qy: `<file>`
-> (NDA-gated). Let me know when you've uploaded those attachments, and I'll do a final pass
+> these for you, but I've recommended the file to attach in the **Attachment** column (J) of the Proposed Answers sheet — Qx: `<file>`, Qy: `<file>`. Let me know when you've uploaded those attachments, and I'll do a final pass
 > to extract a final version of everything we're submitting to the customer.
 
 (If there are zero upload asks, skip straight to the offer of a final extract.)

@@ -88,6 +88,10 @@ Either way, establish and play back to the operator:
   questions. The portal URL is usually in the description or an early comment.
 - **What's explicitly requested**, including named documents (ISO cert, SOC 2, pen-test) —
   these become attachment expectations later.
+- **Customer tier / package** — if your request ticket records it (a label or a field), read
+  it and pass it to the propose step: tier-conditional answers (e.g. recovery objectives by
+  support level) are filled from it. No tier (a prospect) is fine – say so, and the
+  all-tiers answer is used.
 - **Current labels / focus area** — note the focus-area label (e.g. `infosec`, `ESG`); you'll
   re-check it against actual question content at closeout. (Only when you have the issue.)
 - **Access reality.** If the portal needs a login the operator must do (most do), say so now
@@ -108,16 +112,17 @@ works" input.)
 
 ## Step 3 — Propose  (invoke `ddq-propose-answers`)
 
-Match the extracted questions against the live Answer Bank and produce the color-coded review
-workbook, then land the operator in the DDQ Drive folder to import and review it. Follow that
-skill's delivery + reporting rules exactly (two moves: drag the file in; review the flagged
-rows — pink first). **Then stop and wait** — they review in the pane and edit G/H. Do not
-proceed to fill until they say the answers are reviewed/approved.
+Match the extracted questions against the live Answer Bank and publish the live review page
+(the propose skill also writes the workbook record). Follow that skill's delivery + reporting
+rules exactly (two moves: the page link; the pink/gray/yellow counts). **Then stop and wait** —
+they review on the page, edit F/I in place, and set a Decision on each row (Accept / Accept w/
+edits / Reject / Hold). Do not proceed to fill until they say the review is done – and fill
+enters only Accept and Accept w/ edits rows.
 
 ## Step 4 — Fill  (invoke `ddq-portal-fill`)
 
-Once they signal the review is done, run the fill skill: reconcile from the **reviewed sheet
-open in the pane** (not the pre-review local file), fill the portal, verify each fill by
+Once they signal the review is done, run the fill skill: reconcile from the **reviewed answers on
+the review page** (not the pre-review local file), fill the portal, verify each fill by
 reading state back, then do its two-beat closing — name the attachments they must upload,
 wait for their "attached," and run the final `ddq-portal-extract` pass to save the record of
 exactly what's being submitted. That skill owns these mechanics; don't re-derive them here.
